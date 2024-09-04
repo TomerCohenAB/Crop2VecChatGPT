@@ -100,15 +100,16 @@ def get_object_class_name(image_path: str) -> str:
     return decision_response  # Returning the raw response
 
 def process_images_in_folder(main_folder: str):
+    hard_images_path = '/Users/tomercohen/Downloads/crop2vec_chatgpt/hard_images.txt'
+    with open(hard_images_path, 'r') as f:
+        hard_images = f.readlines()
+    hard_images = set([x.strip() for x in hard_images])
+
     results = []
 
     for subfolder in os.listdir(main_folder):
         if not subfolder.startswith('crops_with_bb'):
             continue
-
-        # if 'crops_with_bb_false' not in subfolder:
-        #     continue
-
         print(f'Processing subfolder: {subfolder}')
         subfolder_path = os.path.join(main_folder, subfolder)
 
@@ -129,9 +130,15 @@ def process_images_in_folder(main_folder: str):
                 if p in image_file:
                     images[i] = image_file.replace(p, '').split('.')[0]
         images = list(set(images))
+        det_nums = [x.split('_')[-1] for x in images]
+
+        # take only hard images
+        for i, image_file in enumerate(images):
+            if det_nums[i] not in hard_images:
+                images[i] = None
+        images = [x for x in images if x is not None]
         ##################################    
 
-        # images = images[:]
         for i, image_file in enumerate(tqdm(images, desc="Processing images", unit="image")):
             image_path = os.path.join(subfolder_path, image_file)
             # if 'ab_car_munich_urban_day_010_001320_det_7861.png' not in image_path:
