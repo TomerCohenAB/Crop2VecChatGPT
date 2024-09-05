@@ -85,17 +85,25 @@ def get_object_class_name(image_path: str) -> str:
 
     f"{description_response}\n\n"
 
-    ##### best ########
-    "Based on the images and the description provided, is there a real human, or a part of a real human in the red bounding box in the center of the image?\n"
-    "I'm specifically interested in knowing whether there's a real human, or some part of a real human, INSIDE the actual red bounding box. "
-    # "If there are humans right next to the bounding box, but the box itself does not contain any part of a human, then the answer should be NO.\n"
-    # "Note that the person might be occluded or partially visible, but there still is a person inside the bounding box even if the person is occluded or partially visible. "
+    # ##### best ########
+    # "Based on the images and the description provided, is there a real human, or a part of a real human in the red bounding box in the center of the image?\n"
+    # "I'm specifically interested in knowing whether there's a real human, or some part of a real human, INSIDE the actual red bounding box. "
+    # # "If there are humans right next to the bounding box, but the box itself does not contain any part of a human, then the answer should be NO.\n"
+    # # "Note that the person might be occluded or partially visible, but there still is a person inside the bounding box even if the person is occluded or partially visible. "
+    # "Do not confuse with objects that are outside the red bounding box.\n"
+    # "Note that the person might be riding a bicycle, a motorcycle, or sitting inside a car.\n"
+    # "Be cautious not to confuse non-human objects, such as bicycles, motorcycles, poles, signs, bags, shadows, or reflections, for parts of a human.\n"
+
+    # "If you are not sure, please say so explicitly. I want your answer to be 100% correct, so if you have the slightest doubt, tell me you're not sure.\n"
+
+    # "answer should be ped if there's ANY part of human inside the bounding box, otherwise fa. only answer one of these specific phrases: ped/fa/maybe\n"
+    # "Also provide a confidence score between 0 and 100, indicating how confident you are in your answer.\n"
+    # "The final answer should be in the format: ped CONF, fa CONF, maybe CONF etc.\n"
+    # #####################
+
+    "Based on the images and the description provided, is there a real human, or a part of a real human inside the red bounding box?\n"
     "Do not confuse with objects that are outside the red bounding box.\n"
-    "Note that the person might be riding a bicycle, a motorcycle, or sitting inside a car.\n"
-    "Be cautious not to confuse non-human objects, such as bicycles, motorcycles, poles, signs, bags, shadows, or reflections, for parts of a human.\n"
-
     "If you are not sure, please say so explicitly. I want your answer to be 100% correct, so if you have the slightest doubt, tell me you're not sure.\n"
-
     "answer should be ped if there's ANY part of human inside the bounding box, otherwise fa. only answer one of these specific phrases: ped/fa/maybe\n"
     "Also provide a confidence score between 0 and 100, indicating how confident you are in your answer.\n"
     "The final answer should be in the format: ped CONF, fa CONF, maybe CONF etc.\n"
