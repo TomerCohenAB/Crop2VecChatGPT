@@ -4,6 +4,7 @@ from PIL import Image
 from io import BytesIO
 import base64
 import os
+import pickle
 import re
 from pathlib import Path
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
@@ -43,6 +44,7 @@ def get_object_class_name(image_path: str) -> str:
     "The fifth image is the actual crop of the red bounding box in the original image.\n"
 
     "Please carefully describe in detail the contents inside the red bounding box in the first image.\n"
+    "Consider the context around the bounding box, and the other images to verify your assumption on the bounding box content.\n"
     "Also describe the immediate surroundings around the red bounding box in the first image.\n"
     "Do not make any assumptions about what might be present; just describe exactly what you see.\n"
     "Be as specific as possible, mentioning any visible objects, shapes, textures, colors, and positions.\n"
@@ -75,7 +77,7 @@ def get_object_class_name(image_path: str) -> str:
     # "The first image is the original image, the second image is the original image with a red bounding box in the center\n"
     # "The third image is the crop of the red bounding box in the original image.\n"
 
-    "There are 5 images attached. The first image is the original image, the second image is the original image with a red bounding box in the center\n"
+    " The first image is the original image, the second image is the original image with a red bounding box in the center\n"
     "The third and forth images are the crops of the red bounding box in the original image with different context sizes.\n"
     "The fifth image is the actual crop of the red bounding box in the original image.\n"
 
@@ -86,12 +88,17 @@ def get_object_class_name(image_path: str) -> str:
     ##### best ########
     "Based on the images and the description provided, is there a real human, or a part of a real human in the red bounding box in the center of the image?\n"
     "I'm specifically interested in knowing whether there's a real human, or some part of a real human, INSIDE the actual red bounding box. "
-    "If there are humans right next to the bounding box, but the box itself does not contain any part of a human, then the answer should be NO.\n"
-    "Note that the person might be occluded or partially visible, but there still is a person inside the bounding box even if the person is occluded or partially visible. "
+    # "If there are humans right next to the bounding box, but the box itself does not contain any part of a human, then the answer should be NO.\n"
+    # "Note that the person might be occluded or partially visible, but there still is a person inside the bounding box even if the person is occluded or partially visible. "
     "Do not confuse with objects that are outside the red bounding box.\n"
     "Note that the person might be riding a bicycle, a motorcycle, or sitting inside a car.\n"
     "Be cautious not to confuse non-human objects, such as bicycles, motorcycles, poles, signs, bags, shadows, or reflections, for parts of a human.\n"
-    "answer should be ped if there's ANY part of pedestrian inside the bounding box, otherwise fa. only answer one of these specific phrases: ped/fa\n"
+
+    "If you are not sure, please say so explicitly. I want your answer to be 100% correct, so if you have the slightest doubt, tell me you're not sure.\n"
+
+    "answer should be ped if there's ANY part of human inside the bounding box, otherwise fa. only answer one of these specific phrases: ped/fa/maybe\n"
+    "Also provide a confidence score between 0 and 100, indicating how confident you are in your answer.\n"
+    "The final answer should be in the format: ped CONF, fa CONF, maybe CONF etc.\n"
     #####################
 
     # "Based on the images and the description provided, is there a real human, or a part of a real human in the red bounding box?\n"
@@ -129,16 +136,18 @@ def get_object_class_name(image_path: str) -> str:
         decision = 'ped'
     elif 'fa' in response:
         decision = 'fa'
+    elif 'maybe' in response:
+        decision = 'maybe'
     else:
         print(f"Error: GPT-4 response is not 'ped' or 'fa'. Response: {response}")
-        decision = 'fa'
+        decision = 'maybe'
     
     confidence = extract_integer(response)
     # print(f"Decision: {decision}, Confidence: {confidence}")
 
-    return decision  # Returning the raw response
+    return decision, confidence
 
-def process_images_in_folder(main_folder: str, hard_images_path: str):
+def process_images_in_folder(main_folder: str, hard_images_path: str, use_only_hard_images: bool):
     with open(hard_images_path, 'r') as f:
         hard_images = f.readlines()
     hard_images = set([x.strip() for x in hard_images])
@@ -172,12 +181,13 @@ def process_images_in_folder(main_folder: str, hard_images_path: str):
         det_nums = [x.split('_')[-1] for x in images]
 
         # take only hard images
-        # for i, image_file in enumerate(images):
-        #     if det_nums[i] not in hard_images:
-        #         images[i] = None
-        # images = [x for x in images if x is not None]
-        # images = sorted(images)
-        # images = images[:5]
+        if use_only_hard_images:
+            for i, image_file in enumerate(images):
+                if det_nums[i] not in hard_images:
+                    images[i] = None
+            images = [x for x in images if x is not None]
+            images = sorted(images)
+        # images = images[:2]
         ##################################    
 
         for i, image_file in enumerate(tqdm(images, desc="Processing images", unit="image")):
@@ -185,13 +195,14 @@ def process_images_in_folder(main_folder: str, hard_images_path: str):
             # if 'det_7269' not in image_path:
             #     continue
 
-            object_class_name = get_object_class_name(image_path)
+            object_class_name, conf = get_object_class_name(image_path)
             results.append({
                 # "image_path": image_path + "_orig_with_bb.png",
                 "image_path": image_path + "_context_10.png",
                 "initial_pred": initial_pred,
                 "manual_gt": manual_gt,
                 "gpt_pred": object_class_name,
+                "confidence": conf
             })
 
     return results
@@ -235,13 +246,18 @@ def copy_errors_to_directory(results, error_folder):
 if __name__ == "__main__":
     main_folder = "/Users/tomercohen/Downloads/crop2vec_chatgpt/Manual_Tagged_crops_multi_context"
     error_folder = "/Users/tomercohen/Downloads/crop2vec_chatgpt/Manual_Tagged_ChatGPT_errors"
-    hard_images_path = '/Users/tomercohen/Downloads/crop2vec_chatgpt/hard_images_Manual_Tagged_ChatGPT_errors_all_data_3var_5x.txt'
-    
+    hard_images_path = '/Users/tomercohen/Downloads/crop2vec_chatgpt/hard_images_Manual_Tagged_ChatGPT_errors_multi_context_all_best_f1_086.txt'
+    use_only_hard_images = False
+
     # Create an empty clone of the input directories
     create_error_directory_structure(main_folder, error_folder)
 
-    results = process_images_in_folder(main_folder, hard_images_path)
+    results = process_images_in_folder(main_folder, hard_images_path, use_only_hard_images)
     print(f'unique gpt preds: {Counter([result["gpt_pred"] for result in results])}')
+
+    # save results to file
+    with open(f'{main_folder}/results.pkl', 'wb') as f:
+        pickle.dump(results, f)
 
     # Collect labels and predictions for comparison
     initial_preds = [result['initial_pred'] for result in results]
