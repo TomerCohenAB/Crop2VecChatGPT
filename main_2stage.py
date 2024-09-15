@@ -25,7 +25,7 @@ def extract_integer(s):
         return int(match.group())
     return None
 
-def get_object_class_name(image_path: str) -> str:
+def get_object_class_name(image_path: str, model: str) -> str:
     def encode_image(im_path):
         with open(im_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
@@ -60,7 +60,7 @@ def get_object_class_name(image_path: str) -> str:
 
     # Create the completion request for the first prompt
     completion1 = client.chat.completions.create(
-        model="gpt-4o",
+        model=model,
         messages=[
             {"role": "user", "content": user_message_content1}
         ],
@@ -128,7 +128,7 @@ def get_object_class_name(image_path: str) -> str:
 
     # Create the completion request for the second prompt
     completion2 = client.chat.completions.create(
-        model="gpt-4o",
+        model=model,
         messages=[
             {"role": "user", "content": user_message_content2}  
         ],
@@ -137,6 +137,7 @@ def get_object_class_name(image_path: str) -> str:
 
     # Extract the decision from the second response
     response = completion2.choices[0].message.content
+    response = response.lower()
     # print("Decision from Prompt 2:", decision_response)
     ################################################
 
@@ -155,7 +156,7 @@ def get_object_class_name(image_path: str) -> str:
 
     return decision, confidence
 
-def process_images_in_folder(main_folder: str, hard_images_path: str, use_only_hard_images: bool):
+def process_images_in_folder(main_folder: str, hard_images_path: str, use_only_hard_images: bool, model: str):
     with open(hard_images_path, 'r') as f:
         hard_images = f.readlines()
     hard_images = set([x.strip() for x in hard_images])
@@ -188,14 +189,14 @@ def process_images_in_folder(main_folder: str, hard_images_path: str, use_only_h
         images = list(set(images))
         det_nums = [x.split('_')[-1] for x in images]
 
+        images = sorted(images)
         # take only hard images
         if use_only_hard_images:
             for i, image_file in enumerate(images):
                 if det_nums[i] not in hard_images:
                     images[i] = None
             images = [x for x in images if x is not None]
-            images = sorted(images)
-        # images = images[:2]
+        images = images[:2]
         ##################################    
 
         for i, image_file in enumerate(tqdm(images, desc="Processing images", unit="image")):
@@ -203,7 +204,7 @@ def process_images_in_folder(main_folder: str, hard_images_path: str, use_only_h
             # if 'det_7269' not in image_path:
             #     continue
 
-            object_class_name, conf = get_object_class_name(image_path)
+            object_class_name, conf = get_object_class_name(image_path, model)
             results.append({
                 # "image_path": image_path + "_orig_with_bb.png",
                 "image_path": image_path + "_context_10.png",
@@ -255,12 +256,14 @@ if __name__ == "__main__":
     main_folder = "/Users/tomercohen/Downloads/crop2vec_chatgpt/Manual_Tagged_crops_multi_context"
     error_folder = "/Users/tomercohen/Downloads/crop2vec_chatgpt/Manual_Tagged_ChatGPT_errors"
     hard_images_path = '/Users/tomercohen/Downloads/crop2vec_chatgpt/hard_images_Manual_Tagged_ChatGPT_errors_multi_context_all_best_f1_086.txt'
-    use_only_hard_images = False
+    # hard_images_path = '/Users/tomercohen/Downloads/crop2vec_chatgpt/hard_images_maybe_images.txt'
+    use_only_hard_images = True
+    model = "o1-preview"
 
     # Create an empty clone of the input directories
     create_error_directory_structure(main_folder, error_folder)
 
-    results = process_images_in_folder(main_folder, hard_images_path, use_only_hard_images)
+    results = process_images_in_folder(main_folder, hard_images_path, use_only_hard_images, model)
     print(f'unique gpt preds: {Counter([result["gpt_pred"] for result in results])}')
 
     # save results to file

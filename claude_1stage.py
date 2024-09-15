@@ -29,32 +29,32 @@ def get_object_class_name(image_path: str) -> str:
         with open(im_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
 
-    encoded_images = [encode_image(image_path + p + '.png') for p in postfixes]
-
-    # prompt = (
-    #     "There are 5 images provided. The first image is the original image. The second image is the original image with a red bounding box in the center. "
-    #     "The third and fourth images are crops of the red bounding box with different context sizes. The fifth image is the actual crop of the red bounding box. "
-    #     "Your task is to determine whether there is a real human or a part of a real human inside the red bounding box in the images. "
-    #     "Consider the following steps: \n\n"
-    #     "1. Carefully analyze the contents inside and around the red bounding box in the first image. Consider the context around the bounding box, "
-    #     "and use the other images to verify your assumptions. Describe any visible objects, shapes, textures, colors, and positions.\n"
-    #     "2. Based on your analysis, decide whether there is a real human, or a part of a real human, INSIDE the red bounding box. "
-    #     "Be cautious not to confuse non-human objects, such as bicycles, motorcycles, poles, signs, bags, shadows, or reflections, for parts of a human. "
-    #     "Note that the person might be occluded or partially visible but still consider it a 'ped' if there's ANY part of a human inside the bounding box.\n"
-    #     "3. Provide your answer using one of these specific phrases: 'ped', 'fa', or 'maybe'. Additionally, provide a confidence score between 0 and 100, "
-    #     "indicating how confident you are in your answer. The final answer should be in the format: 'ped CONF', 'fa CONF', or 'maybe CONF'.\n"
-    #     "If you are not sure, please say so explicitly. I want your answer to be 100% correct, so if you have the slightest doubt, tell me you're not sure."
-    # )
+    encoded_images = []
+    for p in postfixes:
+        image_path_p = image_path + p + '.png'
+        encoded_images.append(encode_image(image_path_p))
 
     prompt = (
-        "There are 5 images provided. The first image is the original image. The second image is the original image with a red bounding box in the center. "
-        "The third and fourth images are crops of the red bounding box with different context sizes. The fifth image is the actual crop of the red bounding box. "
-        "Your task is to determine whether there is a real human or a part of a real human inside the red bounding box in the images. "
-        "I am not sure if there's a human in the bounding box. It's very tricky and confusing. Therefore, I need your help to decide.\n"
-        "In your answer, please carefully analyize all of the images and the context around the bounding box. and the validity of a human presence in the bounding box.\n"
-        "If you are not sure, please answer maybe. If you are sure there is a human in the bounding box, say ped. If you are sure there is no human in the bounding box, say fa.\n"
-        "Additionally, provide a confidence score between 0 and 100, "
-        "indicating how confident you are in your answer. The final answer should be in the format: 'ped CONF', 'fa CONF', or 'maybe CONF'.\n"
+    "There are 5 images attached. The first image is the original image, the second image is the original image with a red bounding box in the center. "
+    "The third and fourth images are the crops of the red bounding box in the original image with different context sizes. "
+    "The fifth image is the actual crop of the red bounding box in the original image.\n\n"
+
+    "Task 1: Detailed Description\n"
+    "Please carefully describe in detail the contents inside the red bounding box in the first image. "
+    "Consider the context around the bounding box, and the other images to verify your assumption on the bounding box content. "
+    "Also describe the immediate surroundings around the red bounding box in the first image. "
+    "Do not make any assumptions about what might be present; just describe exactly what you see. "
+    "Be as specific as possible, mentioning any visible objects, shapes, textures, colors, and positions.\n\n"
+
+    "Task 2: Human Presence Analysis\n"
+    "After completing the detailed description, analyze whether there is a real human, or a part of a real human inside the red bounding box. "
+    "Do not confuse with objects that are outside the red bounding box. "
+    "If you are not sure, please say so explicitly. Your answer should be 100% correct, so if you have the slightest doubt, indicate that you're not sure. "
+    "Answer should be 'ped' if there's ANY part of human inside the bounding box, otherwise 'fa'. Only use one of these specific phrases: ped/fa/maybe. "
+    "Also provide a confidence score between 0 and 100, indicating how confident you are in your answer. "
+    "The final answer for this task should be in the format: ped CONF, fa CONF, or maybe CONF.\n\n"
+
+    "Please complete both tasks in order, providing the detailed description first, followed by your analysis of human presence."
     )
 
     user_message_content = [{"type": "text", "text": prompt}] + [
@@ -66,23 +66,31 @@ def get_object_class_name(image_path: str) -> str:
         model="gpt-4o",
         messages=[
             {"role": "user", "content": user_message_content}
-        ]
+        ],
     )
 
     response = completion.choices[0].message.content
-    response = response.lower()
-
-    if 'ped' in response:
-        decision = 'ped'
-    elif 'fa' in response:
-        decision = 'fa'
-    elif 'maybe' in response:
-        decision = 'maybe'
+    
+    # Extract the decision and confidence from the response
+    lines = response.split('\n')
+    decision_line = next((line for line in reversed(lines) if any(keyword in line.lower() for keyword in ['ped', 'fa', 'maybe'])), None)
+    
+    if decision_line:
+        if 'ped' in decision_line.lower():
+            decision = 'ped'
+        elif 'fa' in decision_line.lower():
+            decision = 'fa'
+        elif 'maybe' in decision_line.lower():
+            decision = 'maybe'
+        else:
+            print(f"Error: GPT-4 response is not 'ped' or 'fa'. Response: {decision_line}")
+            decision = 'maybe'
+        
+        confidence = extract_integer(decision_line)
     else:
-        print(f"Error: GPT-4 response is not 'ped', 'fa', or 'maybe'. Response: {response}")
+        print(f"Error: Could not find decision in GPT-4 response. Full response: {response}")
         decision = 'maybe'
-
-    confidence = extract_integer(response)
+        confidence = 0
 
     return decision, confidence
 
@@ -100,11 +108,8 @@ def process_images_in_folder(main_folder: str, hard_images_path: str, use_only_h
         subfolder_path = os.path.join(main_folder, subfolder)
 
         folder_parts = subfolder.split('_')
-        initial_pred = folder_parts[3].lower()
-        initial_pred = 'ped' if initial_pred == 'true' else 'fa'
-
-        manual_gt = folder_parts[-1].lower()
-        manual_gt = 'ped' if manual_gt == 'manualtrue' else 'fa'
+        initial_pred = 'ped' if folder_parts[3].lower() == 'true' else 'fa'
+        manual_gt = 'ped' if folder_parts[-1].lower() == 'manualtrue' else 'fa'
 
         images = os.listdir(subfolder_path)
         images = [x for x in images if x.endswith(('.png', '.jpg', '.jpeg'))]
@@ -115,16 +120,15 @@ def process_images_in_folder(main_folder: str, hard_images_path: str, use_only_h
         images = list(set(images))
         det_nums = [x.split('_')[-1] for x in images]
 
+        images = sorted(images)
         if use_only_hard_images:
             for i, image_file in enumerate(images):
                 if det_nums[i] not in hard_images:
                     images[i] = None
             images = [x for x in images if x is not None]
-            images = sorted(images)
 
-        for i, image_file in enumerate(tqdm(images, desc="Processing images", unit="image")):
+        for image_file in tqdm(images, desc="Processing images", unit="image"):
             image_path = os.path.join(subfolder_path, image_file)
-
             object_class_name, conf = get_object_class_name(image_path)
             results.append({
                 "image_path": image_path + "_context_10.png",
